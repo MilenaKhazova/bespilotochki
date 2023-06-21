@@ -192,3 +192,78 @@ for b in text_.splitlines():
 
 plt.imshow(img_b, cmap='gray');
 
+def change_and_predict_contours(img, thresh=False, img_size=64, model=model_load, activity_map=activity_map, epsilon=4, min_samples=3):
+    
+    # to grayscale if not
+    if len(img.shape) > 2:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+    # thresholding
+    ret, img = cv2.threshold(img, 100, 255, cv2.THRESH_BINARY)
+    kernel = np.ones((3, 3), np.int8)
+    img = cv2.erode(img, kernel, iterations=1)
+    
+    if thresh:
+        ret, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV)
+    
+    # resize
+    img_64_full = cv2.resize(img, (img_size, img_size))
+    img_pad = np.pad(img_64_full, ((30, 30), (30, 30)))
+    img_64_ready = cv2.resize(img_pad, (img_size, img_size))
+    
+    
+    ### clustering with DBSCAN
+    # generate data
+    _, a = cv2.threshold(img_64_ready, 100, 255, cv2.THRESH_BINARY)
+    a = a / 255
+    data = []
+    for i in range(img_size):
+        for j in range(img_size):
+            if a[i][j]:
+                data.append([i, j])
+    data = np.array(data)
+    
+    # clustering and find the biggest cluster
+    clustering = DBSCAN(eps=epsilon, min_samples=min_samples)
+    p = clustering.fit_predict(data)
+    p_c = Counter(p)
+    max_kay = 0
+    max_value = max(p_c.values())
+    for key, value in p_c.items():
+        if value == max_value:
+            max_key = key
+    
+    # filter image using cluster
+    for i, j in enumerate(p):
+        if j != max_key:
+            a[data[i][0], data[i][1]] = 0
+    
+    img_64_final = a
+    
+    
+    # predict
+    for_predict = img_64_final.reshape((1, img_size, img_size, 1))
+    prob = model.predict(for_predict)
+    letter = activity_map[prob.argmax()]
+    
+    return img_64_final, prob, letter
+plt.imshow(img_letters[1]);
+
+letters_final = []
+boxes_final = []
+probs_final = []
+
+for img_box in img_letters:
+    box, prbs, letter = change_and_predict_contours(img_box, thresh=True)
+    letters_final.append(letter)
+    boxes_final.append(box)
+    probs_final.append(prbs)
+img_copy = Image.fromarray(img_boxes)
+
+font = ImageFont.truetype("fonts/GHEAGrpalatReg.otf", 64)
+
+for i in range(len(letters_final)):
+    img_draw = ImageDraw.Draw(img_copy)
+    img_draw.text((boxes[i][0] + 15, boxes[i][1] - 100), text=letters_final[i], fill='green', font=font)
+    
+
